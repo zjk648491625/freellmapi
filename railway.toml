@@ -1,0 +1,9 @@
+[build]
+# Build the WHOLE monorepo (server + cli + client). Without an explicit
+# buildCommand, Railpack auto-detects only the server workspace, so client/dist
+# never exists and the dashboard 502s on / (ENOENT: /app/client/dist/index.html).
+buildCommand = "npm run build"
+
+[deploy]
+# Start the server workspace
+startCommand = "npm run start -w server"

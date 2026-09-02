@@ -20,6 +20,8 @@ import { analyticsRouter } from './routes/analytics.js';
 import { healthRouter } from './routes/health.js';
 import { freeTierRouter } from './routes/free-tier.js';
 import { settingsRouter } from './routes/settings.js';
+// Custom model groups (自定义模型组) — separate feature router so upstream merges stay cheap.
+import { customGroupsRouter } from './routes/custom-groups.js';
 import { premiumRouter } from './routes/premium.js';
 import { backupsRouter } from './routes/backups.js';
 import { cacheRouter } from './routes/cache.js';
@@ -254,6 +256,9 @@ export function createApp(config?: Config) {
   app.use('/api/health', requireAuth, healthRouter);
   app.use('/api/free-tier', requireAuth, freeTierRouter);
   app.use('/api/settings', requireAuth, settingsRouter);
+  // Custom model groups (自定义模型组): dashboard CRUD for the group feature in
+  // services/custom-groups.ts. Dashboard-session gated like the rest of /api.
+  app.use('/api/custom-model-groups', requireAuth, customGroupsRouter);
   app.use('/api/premium', requireAuth, premiumRouter);
   // Database dumps and restores. Dashboard-session gated: the dump files carry
   // encrypted provider keys and every routing setting, so the unified /v1 key

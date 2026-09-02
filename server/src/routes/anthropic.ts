@@ -25,6 +25,7 @@ import { routedViaValue } from '../lib/header-value.js';
 import { applyTokenBudget, tokenBudgetMessage } from '../lib/guardrails.js';
 import { resolveAnthropicModel, claudeFamilyDiscoveryEntries } from '../services/anthropic-map.js';
 import { isUnifyEnabled, getModelGroups, resolveRequestedIdForDispatch } from '../services/model-groups.js';
+import { resolveCustomGroupDispatch } from '../services/custom-groups.js';
 import type { ReasoningEffort } from '../lib/sampling-params.js';
 import { buildModelListing } from '../services/model-listing.js';
 import { compressRequest, formatCompressionHeader } from '../services/compression/pipeline.js';
@@ -524,11 +525,17 @@ anthropicRouter.post('/messages', async (req: Request, res: Response) => {
   const outputReserve = routingReserveTokens(max_tokens);
   const estimatedTotal = estimatedInputTokens + imageCount * IMAGE_TOKEN_ESTIMATE + outputReserve;
 
+  // Custom model groups (services/custom-groups.ts): a group NAME is not a
+  // catalog id, so resolveAnthropicModel would degrade it to auto-route. Check
+  // it FIRST; a non-null result short-circuits the family map below. Catalog
+  // precedence is enforced inside the resolver — a real model id (or unify
+  // slug) never reaches the group logic.
+  const customGroup = resolveCustomGroupDispatch(routedModel);
   // Resolve the model through the operator's Claude-family map (opus/sonnet/
   // haiku/default → auto | a pinned catalog model). A concrete catalog id pins
   // directly. `pinned` drives the analytics requested-model label.
-  const resolved = resolveAnthropicModel(routedModel);
-  const pinnedModelId = resolved.pinned ? (body.model ?? null) : null;
+  const resolved = customGroup ? { pinned: false } : resolveAnthropicModel(routedModel);
+  const pinnedModelId = customGroup ? (body.model ?? null) : (resolved.pinned ? (body.model ?? null) : null);
 
   // Session affinity: Claude Code stamps every request in a session with
   // X-Claude-Code-Session-Id. When auto-routing, stick the whole session to one
@@ -577,6 +584,27 @@ anthropicRouter.post('/messages', async (req: Request, res: Response) => {
     preferredModel = (sticky != null && groupChain.some(r => r.model_db_id === sticky)) ? sticky : undefined;
   }
   if (preferredModel == null && !groupChain) preferredModel = resolveStickyPreference(getStickyModel(messages, sessionId));
+
+  // ── Custom model groups (services/custom-groups.ts) ───────────────────────
+  // A group request routes over the RANDOMIZED strict chain: one random member
+  // serves, the rest are the in-group failover order through the shared loop
+  // below. Deliberately inserted AFTER the sticky block so it can reset any
+  // preference the auto bucket produced — group calls never honor stickiness;
+  // per-request randomness is the feature. The success path still writes its
+  // last-served member under an isolated bucket (stickyScope) that only group
+  // requests would ever read.
+  if (customGroup) {
+    if (customGroup.status !== 'ok' || customGroup.chain.length === 0) {
+      const why = customGroup.status === 'disabled'
+        ? 'is disabled'
+        : `has no enabled members${customGroup.unresolved.length ? ` (unresolved: ${customGroup.unresolved.join(', ')})` : ''}`;
+      sendError(res, 400, 'invalid_request_error', `Model group '${routedModel}' ${why}. Fix it in the dashboard's model groups panel, or use 'auto'.`);
+      return;
+    }
+    groupChain = customGroup.chain;
+    preferredModel = undefined;
+    stickyScope = `custom-group:${customGroup.group.name}`;
+  }
 
   // Thin adapter over the shared fallback loop (lib/fallback-loop.ts): the
   // cooldown/skip/penalty/exhaustion machinery is shared, only the Anthropic

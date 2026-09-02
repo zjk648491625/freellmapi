@@ -13,6 +13,7 @@ import { routeRequest, hasEnabledVisionModel, hasEnabledToolsModel, resolveStick
 import { getDb } from '../db/index.js';
 import { resolveAuth, prependSystemPrompt } from '../lib/system-prompt.js';
 import { isUnifyEnabled, getModelGroups, resolveRequestedIdForDispatch } from '../services/model-groups.js';
+import { resolveCustomGroupDispatch } from '../services/custom-groups.js';
 import { contentToString, messageHasImage } from '../lib/content.js';
 import { normalizeMessageImages } from '../lib/image-normalize.js';
 import { repairToolArguments, toolSchemaMap } from '../lib/tool-args.js';
@@ -677,6 +678,10 @@ responsesRouter.post('/responses', async (req: Request, res: Response) => {
     const db = getDb();
     const resolved = isUnifyEnabled() ? resolveRequestedIdForDispatch(requestedModelLabel, getModelGroups()) : null;
     const members = resolved?.memberDbIds ?? null;
+    // Custom model groups (services/custom-groups.ts): computed once per
+    // pinned request; only a configured GROUP name gets a non-null value, and
+    // catalog ids always win (the resolver enforces catalog-wins precedence).
+    const customGroup = resolveCustomGroupDispatch(requestedModelLabel);
     if (members && members.length > 0) {
       groupChain = resolveModelGroupCandidates(members, resolved!.demotedDbIds);
       if (groupChain.length === 0) {
@@ -694,6 +699,25 @@ responsesRouter.post('/responses', async (req: Request, res: Response) => {
       }
       const sticky = getStickyModel(messages, sessionIdHeader, requestedModelLabel);
       preferredModel = (sticky != null && groupChain.some(r => r.model_db_id === sticky)) ? sticky : undefined;
+    } else if (customGroup) {
+      // ── Custom model groups (services/custom-groups.ts) ────────────────────
+      // Same ladder as /chat/completions: one random member serves, the rest
+      // are the in-group failover order through the shared fallback loop. No
+      // sticky preference is read — per-request randomness is the feature.
+      if (customGroup.status === 'disabled' || customGroup.chain.length === 0) {
+        const why = customGroup.status === 'disabled'
+          ? 'is disabled'
+          : `has no enabled members${customGroup.unresolved.length ? ` (unresolved: ${customGroup.unresolved.join(', ')})` : ''}`;
+        res.status(400).json({
+          error: {
+            message: `Model group '${requestedModelLabel}' ${why}. Fix it in the dashboard's model groups panel, or use 'auto' (or omit the 'model' field) to auto-route.`,
+            type: 'invalid_request_error',
+            code: 'model_not_found',
+          },
+        });
+        return;
+      }
+      groupChain = customGroup.chain;
     } else {
       const enabled = db.prepare('SELECT id FROM models WHERE model_id = ? AND enabled = 1').get(requestedModelLabel) as { id: number } | undefined;
       if (enabled) {

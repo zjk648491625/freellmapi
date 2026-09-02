@@ -31,6 +31,8 @@ import { enforceJsonContent } from '../lib/structured-output.js';
 import type { Platform } from '@freellmapi/shared/types.js';
 import { inferQuotaPoolKey, type QuotaObservationContext } from '../services/provider-quota.js';
 import { isUnifyEnabled, getModelGroups, resolveRequestedIdForDispatch } from '../services/model-groups.js';
+import { resolveCustomGroupDispatch, customGroupDiscoveryEntries } from '../services/custom-groups.js';
+import { runGroupFanout, streamGroupFanout, GroupStrategyError } from '../services/custom-group-strategies.js';
 import { buildModelListing } from '../services/model-listing.js';
 import { claudeFamilyDiscoveryEntries } from '../services/anthropic-map.js';
 import { compressRequest, formatCompressionHeader } from '../services/compression/pipeline.js';
@@ -370,6 +372,24 @@ proxyRouter.get('/models', (req: Request, res: Response) => {
       }))
     : [];
 
+  // Custom model groups (services/custom-groups.ts) — one discovery entry per
+  // enabled operator-defined group, so clients can send the group NAME as the
+  // model id and get a random member of that group. Listed only when no
+  // catalog id claims the name — the dispatch path enforces the same
+  // catalog-wins precedence.
+  const customGroupEntriesAll = customGroupDiscoveryEntries(listedIds).map(g => ({
+    id: g.id,
+    object: 'model' as const,
+    created: 0,
+    owned_by: 'freellmapi',
+    name: g.name,
+    context_window: g.contextWindow,
+    context_length: g.contextWindow,
+    available: g.available,
+    unavailable_reason: g.available ? null : 'no_key',
+    supported_parameters: supportedParametersForPlatforms(g.platforms, { tools: g.supportsTools }),
+  }));
+
   res.json({
     object: 'list',
     data: [
@@ -400,6 +420,8 @@ proxyRouter.get('/models', (req: Request, res: Response) => {
         unavailable_reason: autoContextWindow != null ? null : 'no_models',
       },
       ...claudeFamilyEntries,
+      // Group entries honor the same availability filter as catalog rows.
+      ...(onlyAvailable ? customGroupEntriesAll.filter(e => e.available) : customGroupEntriesAll),
       ...profileRows.map(p => ({
         id: `auto:${p.name.toLowerCase()}`,
         object: 'model',
@@ -1043,6 +1065,9 @@ proxyRouter.post('/completions', async (req: Request, res: Response) => {
     const db = getDb();
     const resolved = isUnifyEnabled() ? resolveRequestedIdForDispatch(requestedModel, getModelGroups()) : null;
     const members = resolved?.memberDbIds ?? null;
+    // Custom model groups (services/custom-groups.ts): computed once per
+    // pinned request; only a configured GROUP name gets a non-null value.
+    const customGroup = resolveCustomGroupDispatch(requestedModel);
     if (members && members.length > 0) {
       groupChain = resolveModelGroupCandidates(members, resolved!.demotedDbIds);
       if (groupChain.length === 0) {
@@ -1070,6 +1095,32 @@ proxyRouter.post('/completions', async (req: Request, res: Response) => {
         }
         return;
       }
+    } else if (customGroup) {
+      // ── Custom model groups (services/custom-groups.ts) ── same ladder as
+      // /chat/completions: a random member serves, the rest fail over inside
+      // the group. Legacy /completions has no sticky machinery, so there is
+      // nothing to scope here.
+      if (customGroup.status === 'disabled') {
+        res.status(404).json({
+          error: {
+            message: `Model group '${requestedModel}' is disabled. Enable it in the dashboard's model groups panel, or use 'auto' (or omit the 'model' field) to auto-route.`,
+            type: 'invalid_request_error',
+            code: 'model_not_found',
+          },
+        });
+        return;
+      }
+      if (customGroup.chain.length === 0) {
+        res.status(404).json({
+          error: {
+            message: `Model group '${requestedModel}' has no enabled members${customGroup.unresolved.length ? ` (unresolved: ${customGroup.unresolved.join(', ')})` : ''}. Fix the group's member list in the dashboard, or use 'auto' (or omit the 'model' field) to auto-route.`,
+            type: 'invalid_request_error',
+            code: 'model_not_found',
+          },
+        });
+        return;
+      }
+      groupChain = customGroup.chain;
     } else {
       const enabled = db.prepare('SELECT id FROM models WHERE model_id = ? AND enabled = 1').get(requestedModel) as { id: number } | undefined;
       if (enabled) {
@@ -1903,6 +1954,10 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
     // providers — failing over between them, never to a different model (#335).
     const resolved = isUnifyEnabled() ? resolveRequestedIdForDispatch(requestedModel, getModelGroups()) : null;
     const members = resolved?.memberDbIds ?? null;
+    // Custom model groups (services/custom-groups.ts): computed once per
+    // pinned request. Null unless the id names a configured group — a catalog
+    // id never reaches the group logic (the resolver enforces catalog-wins).
+    const customGroup = resolveCustomGroupDispatch(requestedModel);
     if (members && members.length > 0) {
       groupChain = resolveModelGroupCandidates(members, resolved!.demotedDbIds);
       if (groupChain.length === 0) {
@@ -1937,6 +1992,92 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
       // non-member as preferredModelDbId would make routeRequest inject an
       // off-group model and break strict pinning.
       preferredModel = (sticky != null && groupChain.some(r => r.model_db_id === sticky)) ? sticky : undefined;
+    } else if (customGroup) {
+      // ── Custom model groups (services/custom-groups.ts) ────────────────────
+      // The id named an operator-defined GROUP (unify resolution above already
+      // missed, and the resolver itself re-checks catalog precedence before
+      // answering non-null). Dispatch over a RANDOMIZED strict chain: one
+      // random member serves; the rest are the in-group failover order walked
+      // by the normal fallback loop below. No sticky preference is read —
+      // per-request randomness is the feature.
+      if (customGroup.status === 'disabled') {
+        res.status(404).json({
+          error: {
+            message: `Model group '${requestedModel}' is disabled. Enable it in the dashboard's model groups panel, or use 'auto' (or omit the 'model' field) to auto-route.`,
+            type: 'invalid_request_error',
+            code: 'model_not_found',
+          },
+        });
+        return;
+      }
+      if (customGroup.chain.length === 0) {
+        res.status(404).json({
+          error: {
+            message: `Model group '${requestedModel}' has no enabled members${customGroup.unresolved.length ? ` (unresolved: ${customGroup.unresolved.join(', ')})` : ''}. Fix the group's member list in the dashboard, or use 'auto' (or omit the 'model' field) to auto-route.`,
+            type: 'invalid_request_error',
+            code: 'model_not_found',
+          },
+        });
+        return;
+      }
+      // Fan-out strategies ('synthesize' / 'best_of') dispatch through the
+      // COPIED group engine (services/custom-group-strategies.ts) — a parallel
+      // panel over the group's members, NOT the strict chain below. 'random'
+      // (the default) keeps the strict-chain failover semantics.
+      if (customGroup.group.strategy !== 'random') {
+        const strategyOptions = { temperature, max_tokens, top_p, stop, tools, tool_choice, parallel_tool_calls, ...samplingParams };
+        if (stream) {
+          await streamGroupFanout(res, {
+            group: customGroup.group,
+            requestedModel,
+            messages,
+            options: strategyOptions,
+            estimatedTokens: estimatedTotal,
+            vision: hasImage,
+          });
+          return;
+        }
+        try {
+          const { response, routedVia } = await runGroupFanout({
+            group: customGroup.group,
+            requestedModel,
+            messages,
+            options: strategyOptions,
+            estimatedTokens: estimatedTotal,
+            vision: hasImage,
+          });
+          // Structured-output enforcement — copied from the fusion branch
+          // (#516 parity): fan-out output got no format check, so a
+          // json_schema request could be answered with prose. Heal what's
+          // healable, otherwise answer honestly.
+          const fanMsg = (response as any)?.choices?.[0]?.message;
+          if (samplingParams.response_format && fanMsg && !fanMsg.tool_calls?.length) {
+            const fanText = contentToString(fanMsg.content ?? '');
+            if (fanText) {
+              const enforced = enforceJsonContent(fanText);
+              if (!enforced.ok) {
+                res.status(502).json({ error: { message: `model group '${requestedModel}' produced non-JSON output despite response_format=${samplingParams.response_format.type} — retry, or pin a structured-output-capable model instead`, type: 'server_error' } });
+                return;
+              }
+              if (enforced.healed) fanMsg.content = enforced.content;
+            }
+          }
+          res.setHeader('X-Routed-Via', safeHeaderValue(routedVia));
+          res.json(response);
+        } catch (err: any) {
+          if (err instanceof GroupStrategyError) {
+            res.status(err.status).json({ error: { message: err.message, type: err.status === 429 ? 'rate_limit_error' : 'invalid_request_error' } });
+          } else {
+            res.status(502).json({ error: { message: sanitizeProviderErrorMessage(err?.message ?? 'model group error'), type: 'server_error' } });
+          }
+        }
+        return;
+      }
+      groupChain = customGroup.chain;
+      // Own sticky bucket: the success path writes the last-served member
+      // here, isolated from the global auto scope. This branch never READS it,
+      // so every request re-randomizes the member choice.
+      stickyStrategyKey = `custom-group:${customGroup.group.name}`;
     } else {
       // Unify OFF, or an id that isn't in the catalog: legacy single-row pin.
       const enabled = db.prepare('SELECT id FROM models WHERE model_id = ? AND enabled = 1').get(requestedModel) as { id: number } | undefined;

@@ -29,6 +29,7 @@ import {
   type ExhaustionBody,
 } from './fallback-loop.js';
 import { routedViaValue } from './header-value.js';
+import { resolveCustomGroupDispatch } from '../services/custom-groups.js';
 import { applyTokenBudget, tokenBudgetMessage } from './guardrails.js';
 import { contentToString } from './content.js';
 import { normalizeMessageImages } from './image-normalize.js';
@@ -138,6 +139,26 @@ function resolvePin(model: string | undefined, messages: ChatMessage[], sessionI
       strictChain,
       pinnedLabel: requested,
     };
+  }
+
+  // ── Custom model groups (services/custom-groups.ts) ── Same ladder as the
+  // OpenAI surfaces: checked after unify misses, before the legacy single-row
+  // pin. A group request routes over a RANDOMIZED strict chain (one random
+  // member serves, the rest fail over in-group); pinnedLabel = the group name,
+  // which also tells the dispatch loop to skip sticky writes, and
+  // preferredModel stays unset — per-request randomness is the feature.
+  const customGroup = resolveCustomGroupDispatch(requested);
+  if (customGroup) {
+    if (customGroup.status !== 'ok' || customGroup.chain.length === 0) {
+      const why = customGroup.status === 'disabled'
+        ? 'is disabled'
+        : `has no enabled members${customGroup.unresolved.length ? ` (unresolved: ${customGroup.unresolved.join(', ')})` : ''}`;
+      throw Object.assign(
+        new Error(`Model group '${requested}' ${why}`),
+        { status: 404, code: 'model_not_found' },
+      );
+    }
+    return { strictChain: customGroup.chain, pinnedLabel: requested };
   }
 
   const enabled = db.prepare(

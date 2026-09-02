@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { getDb, getUnifiedApiKey } from '../db/index.js';
 import { extractApiToken, timingSafeStringEqual } from './proxy.js';
 import { buildModelListing } from '../services/model-listing.js';
+import { customGroupDiscoveryEntries } from '../services/custom-groups.js';
 import { supportedParametersForPlatforms } from '../lib/sampling-params.js';
 import { getRoutingScores, getRoutingStrategy, setRoutingStrategy } from '../services/router.js';
 import type { RoutingStrategy } from '../services/scoring.js';
@@ -77,10 +78,25 @@ function listModels(args: Record<string, unknown>): unknown {
     supports_tools: m.supportsTools,
     supported_parameters: supportedParametersForPlatforms(m.platforms, { tools: m.supportsTools }),
   }));
+  // Custom model groups (services/custom-groups.ts) — callable by NAME as the
+  // model id (one random member per request), so agents introspecting over MCP
+  // discover them exactly like the /v1/models listing does: same entry shape,
+  // same catalog-wins filter, same availability semantics.
+  const groupRows = customGroupDiscoveryEntries(new Set(rows.map(r => r.id)))
+    .filter(g => !availableOnly || g.available)
+    .map(g => ({
+      id: g.id,
+      name: g.name,
+      context_window: g.contextWindow,
+      available: g.available,
+      platforms: g.platforms,
+      supports_tools: g.supportsTools,
+      supported_parameters: supportedParametersForPlatforms(g.platforms, { tools: g.supportsTools }),
+    }));
   return {
     auto: { id: 'auto', description: 'router picks the best available model', context_window: autoContextWindow },
-    count: rows.length,
-    models: rows,
+    count: rows.length + groupRows.length,
+    models: [...rows, ...groupRows],
   };
 }
 

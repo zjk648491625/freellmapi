@@ -31,6 +31,7 @@ import PlaygroundPage from '@/pages/PlaygroundPage'
 import FallbackPage from '@/pages/FallbackPage'
 import ModelDetailPage from '@/pages/ModelDetailPage'
 import FusionPage from '@/pages/FusionPage'
+import ModelGroupsPage from '@/pages/ModelGroupsPage'
 import EmbeddingsPage from '@/pages/EmbeddingsPage'
 import ImagePage from '@/pages/ImagePage'
 import VideoPage from '@/pages/VideoPage'
@@ -83,6 +84,7 @@ const modelItems = [
   { to: '/models/video', labelKey: 'models.videoTab' },
   { to: '/models/audio', labelKey: 'models.audioTab' },
   { to: '/models/fusion', labelKey: 'models.fusionTab' },
+  { to: '/models/groups', labelKey: 'models.groupsTab' },
 ]
 
 // The pages that hang off "Analytics". Logs is reachable only from here — it is
@@ -444,6 +446,7 @@ function App() {
                       <Route path="/models/chat" element={<FallbackPage />} />
                       <Route path="/models/chat/:id" element={<ModelDetailPage />} />
                       <Route path="/models/fusion" element={<FusionPage />} />
+          <Route path="/models/groups" element={<ModelGroupsPage />} />
                       <Route path="/models/embeddings" element={<EmbeddingsPage />} />
                       <Route path="/models/embeddings/:id" element={<EmbeddingDetailPage />} />
                       <Route path="/models/image" element={<ImagePage />} />

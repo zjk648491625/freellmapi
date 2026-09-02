@@ -280,6 +280,24 @@ export default function PlaygroundPage() {
       platforms: [] as string[],
     }))
 
+  // Custom model groups (dashboard: Models → Groups). Each enabled group is
+  // callable by its NAME as the model id — the server picks a random member
+  // per request — so the picker mirrors the chain entries above: without this,
+  // the one place to try a group you had just built was a curl command.
+  const { data: groupData } = useQuery<{ groups: { name: string; description: string; enabled: boolean }[] }>({
+    queryKey: ['custom-model-groups'],
+    queryFn: () => apiFetch('/api/custom-model-groups'),
+  })
+  const enabledGroups = (groupData?.groups ?? []).filter(g => g.enabled)
+  const groupNameSet = new Set(enabledGroups.map(g => g.name))
+  const groupOptions = enabledGroups.map(g => ({
+    value: g.name,
+    label: g.name,
+    sub: g.name,
+    isNew: false,
+    platforms: [] as string[],
+  }))
+
   // Unification is always on now (the on/off toggle was removed), so the picker
   // always collapses a model's providers into one option.
   const unifyOn = true
@@ -303,6 +321,7 @@ export default function PlaygroundPage() {
   const modelBlindToImages = pendingImages.length > 0
     && selectedModel !== 'auto' && selectedModel !== 'fusion'
     && !selectedModel.startsWith('auto:')
+    && !groupNameSet.has(selectedModel)
     && !visionValues.has(selectedModel)
 
   // Follow the stream only while the reader is parked at the bottom. Judging
@@ -690,7 +709,9 @@ export default function PlaygroundPage() {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (keyData?.apiKey) headers['Authorization'] = `Bearer ${keyData.apiKey}`
 
-      const isFusion = selectedModel === 'fusion'
+      // Fan-out model groups emit the same _fusion trace frames as the
+      // virtual fusion model, so they share the fusion reader.
+      const isFusion = selectedModel === 'fusion' || groupNameSet.has(selectedModel)
       const sysPrompt = systemPrompt.trim()
       const body: any = {
         messages: [
@@ -703,9 +724,10 @@ export default function PlaygroundPage() {
         ...samplingRequestParams(sampling),
       }
       if (selectedModel !== 'auto') body.model = selectedModel
-      // Everything streams: fusion so you can watch the panel and the judge
-      // arrive, every other model so the answer appears token by token instead
-      // of after a silent minute.
+      // Everything streams: fusion (and fan-out model groups, which reuse the
+      // same additive _fusion trace frames) so you can watch the panel and the
+      // judge arrive, every other model so the answer appears token by token
+      // instead of after a silent minute.
       body.stream = true
 
       abortRef.current?.abort()
@@ -820,6 +842,7 @@ export default function PlaygroundPage() {
     { value: 'auto', label: t('playground.autoModel'), sub: '', isNew: false, platforms: [] as string[] },
     { value: 'fusion', label: t('playground.fusionModel'), sub: '', isNew: false, platforms: [] as string[] },
     ...chainOptions,
+    ...groupOptions,
     ...modelOptions
       .slice()
       .sort((a, b) =>

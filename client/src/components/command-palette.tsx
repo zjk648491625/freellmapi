@@ -112,6 +112,7 @@ export function CommandPalette() {
       { id: 'p-video', group: 'pages', label: t('models.videoTab'), keywords: 'models video text to video generation mp4', icon: Clapperboard, run: go('/models/video') },
       { id: 'p-audio', group: 'pages', label: t('models.audioTab'), keywords: 'models audio speech tts stt transcription whisper', icon: AudioLines, run: go('/models/audio') },
       { id: 'p-fusion', group: 'pages', label: t('models.fusionTab'), keywords: 'models fusion synthesis panel judge', icon: Zap, run: go('/models/fusion') },
+      { id: 'p-groups', group: 'pages', label: t('models.groupsTab'), keywords: 'models groups custom pool random 模型组', icon: Boxes, run: go('/models/groups') },
       { id: 'p-playground', group: 'pages', label: t('nav.playground'), keywords: 'playground test chat try', icon: SquareTerminal, run: go('/playground') },
       { id: 'p-keys', group: 'pages', label: t('nav.keys'), keywords: 'keys providers api tokens', icon: KeyRound, run: go('/keys') },
       { id: 'p-agents', group: 'pages', label: t('nav.agents'), keywords: 'agents claude codex cline ollama gemini', icon: Bot, run: go('/agents') },
