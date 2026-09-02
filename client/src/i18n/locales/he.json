@@ -323,7 +323,19 @@
     "strategy_best_of": "Best-of",
     "strategy_best_of_help": "Return the strongest single answer — no judge call.",
     "exposePanel": "Expose panel details (x_fusion)",
-    "exposePanelHelp": "Attach each member\\u2019s answer and judge metadata under x_fusion in the response."
+    "exposePanelHelp": "Attach each member\\u2019s answer and judge metadata under x_fusion in the response.",
+    "dim_reliability": "Reliability",
+    "dim_speed": "Speed",
+    "dim_intelligence": "Intelligence",
+    "dim_guardrails": "Guardrails",
+    "dim_score": "Score",
+    "dim_context": "Context",
+    "filterAny": "Any",
+    "filterClear": "Clear filters",
+    "selectAllVisible": "Select all",
+    "selectTop10": "Top 10",
+    "filterButton": "Filters",
+    "clearSelection": "Deselect"
   },
   "strategies": {
     "explore": "חקירת דגמים שטרם נמדדו",

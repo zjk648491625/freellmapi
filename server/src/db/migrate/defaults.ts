@@ -72,7 +72,6 @@ export const PROFILE_AUTO_INCLUDE_FILENAME = '20260823_000004_profile_auto_inclu
 export const IDEMPOTENCY_CLAIMS_FILENAME = '20260901_000001_idempotency_claims.ts';
 export const QUOTA_OBSERVATION_LOOKUP_FILENAME = '20260901_000002_quota_observation_lookup.ts';
 export const ANALYTICS_LATENCY_PERCENTILE_INDEX_FILENAME = '20260902_000001_analytics_latency_percentile_index.ts';
-
 export const DEFAULT_MIGRATIONS: readonly DefaultMigration[] = [
   { filename: LEGACY_BASELINE_FILENAME, module: legacyBaseline },
   { filename: CUSTOM_PROVIDER_MODALITIES_FILENAME, module: customProviderModalities },

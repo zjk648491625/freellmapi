@@ -323,7 +323,19 @@
     "strategy_best_of": "Best-of",
     "strategy_best_of_help": "Вернуть самый сильный одиночный ответ — без вызова судьи.",
     "exposePanel": "Показывать детали панели (x_fusion)",
-    "exposePanelHelp": "Приложить ответ каждого участника и метаданные судьи в x_fusion ответа."
+    "exposePanelHelp": "Приложить ответ каждого участника и метаданные судьи в x_fusion ответа.",
+    "dim_reliability": "Стабильность",
+    "dim_speed": "Скорость",
+    "dim_intelligence": "Интеллект",
+    "dim_guardrails": "Ограничители",
+    "dim_score": "Оценка",
+    "dim_context": "Контекст",
+    "filterAny": "Любой",
+    "filterClear": "Сбросить фильтры",
+    "selectAllVisible": "Выбрать все",
+    "selectTop10": "Выбрать Top 10",
+    "filterButton": "Фильтры",
+    "clearSelection": "Снять выбор"
   },
   "strategies": {
     "explore": "Исследовать неизмеренные модели",

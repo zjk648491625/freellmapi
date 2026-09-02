@@ -323,7 +323,19 @@
     "strategy_best_of": "最良",
     "strategy_best_of_help": "ジャッジなしで最も強い単一の回答を返す。",
     "exposePanel": "パネル詳細を公開（x_fusion）",
-    "exposePanelHelp": "各メンバーの回答とジャッジのメタデータをレスポンスの x_fusion に添付。"
+    "exposePanelHelp": "各メンバーの回答とジャッジのメタデータをレスポンスの x_fusion に添付。",
+    "dim_reliability": "安定性",
+    "dim_speed": "速度",
+    "dim_intelligence": "知能",
+    "dim_guardrails": "ガードレール",
+    "dim_score": "スコア",
+    "dim_context": "コンテキスト",
+    "filterAny": "指定なし",
+    "filterClear": "フィルタをクリア",
+    "selectAllVisible": "すべて選択",
+    "selectTop10": "Top 10 を選択",
+    "filterButton": "フィルタ",
+    "clearSelection": "選択を解除"
   },
   "strategies": {
     "explore": "未計測のモデルを探索",

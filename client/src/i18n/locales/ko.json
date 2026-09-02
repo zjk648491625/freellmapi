@@ -323,7 +323,19 @@
     "strategy_best_of": "최고",
     "strategy_best_of_help": "심사 없이 가장 강력한 단일 답변 반환.",
     "exposePanel": "패널 세부 정보 노출 (x_fusion)",
-    "exposePanelHelp": "각 멤버의 답변과 심사 메타데이터를 응답의 x_fusion에 첨부."
+    "exposePanelHelp": "각 멤버의 답변과 심사 메타데이터를 응답의 x_fusion에 첨부.",
+    "dim_reliability": "안정성",
+    "dim_speed": "속도",
+    "dim_intelligence": "지능",
+    "dim_guardrails": "가드레일",
+    "dim_score": "점수",
+    "dim_context": "컨텍스트",
+    "filterAny": "제한 없음",
+    "filterClear": "필터 지우기",
+    "selectAllVisible": "전체 선택",
+    "selectTop10": "Top 10 선택",
+    "filterButton": "필터",
+    "clearSelection": "선택 해제"
   },
   "strategies": {
     "explore": "미측정 모델 탐색",

@@ -323,7 +323,19 @@
     "strategy_best_of": "Best-of",
     "strategy_best_of_help": "Stärkste einzelne Antwort zurückgeben — kein Judge-Aufruf.",
     "exposePanel": "Panel-Details anzeigen (x_fusion)",
-    "exposePanelHelp": "Antwort jedes Mitglieds und Judge-Metadaten unter x_fusion in der Antwort anhängen."
+    "exposePanelHelp": "Antwort jedes Mitglieds und Judge-Metadaten unter x_fusion in der Antwort anhängen.",
+    "dim_reliability": "Zuverlässigkeit",
+    "dim_speed": "Geschwindigkeit",
+    "dim_intelligence": "Intelligenz",
+    "dim_guardrails": "Schutz",
+    "dim_score": "Score",
+    "dim_context": "Kontext",
+    "filterAny": "Beliebig",
+    "filterClear": "Filter zurücksetzen",
+    "selectAllVisible": "Alle auswählen",
+    "selectTop10": "Top 10 wählen",
+    "filterButton": "Filter",
+    "clearSelection": "Auswahl aufheben"
   },
   "strategies": {
     "explore": "Unvermessene Modelle erkunden",

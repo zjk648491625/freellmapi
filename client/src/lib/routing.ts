@@ -26,6 +26,7 @@ export interface FallbackEntry {
   // Max context length in tokens (catalog value), or null when unrecorded.
   // Drives the catalog context-window filter on the Models page.
   contextWindow?: number | null
+  // When this row first appeared in the local catalog (models.created_at,
   supportsVision: boolean
   supportsTools: boolean
   source?: 'catalog' | 'custom'

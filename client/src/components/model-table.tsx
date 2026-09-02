@@ -24,15 +24,15 @@ import {
 // Models page and the per-model detail page share one module.
 
 // A 0..1 value as a thin horizontal bar with the number beside it.
-export function AxisBar({ value, color }: { value: number | undefined; color: string }) {
+export function AxisBar({ value, color, decimals = 0 }: { value: number | undefined; color: string; /** Percent digits to show — 0 (default) keeps the Models page's whole-percent readout. */ decimals?: number }) {
   const v = value ?? 0
   return (
     <div className="flex items-center gap-1.5">
       <div className="h-1.5 w-12 rounded-full bg-muted overflow-hidden">
         <div className="h-full rounded-full" style={{ width: `${Math.round(v * 100)}%`, backgroundColor: color }} />
       </div>
-      <span className="font-mono text-[11px] text-muted-foreground tabular-nums w-7 text-right">
-        {value === undefined ? '–' : Math.round(v * 100)}
+      <span className={`font-mono text-[11px] text-muted-foreground tabular-nums text-right ${decimals > 0 ? 'w-10' : 'w-7'}`}>
+        {value === undefined ? '–' : (v * 100).toFixed(decimals)}
       </span>
     </div>
   )

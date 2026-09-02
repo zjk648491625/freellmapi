@@ -323,7 +323,19 @@
     "strategy_best_of": "择优",
     "strategy_best_of_help": "直接返回最强的单个回答，不调用评审。",
     "exposePanel": "暴露面板细节（x_fusion）",
-    "exposePanelHelp": "在响应的 x_fusion 字段中附上每个成员的回答与评审元数据。"
+    "exposePanelHelp": "在响应的 x_fusion 字段中附上每个成员的回答与评审元数据。",
+    "dim_reliability": "稳定",
+    "dim_speed": "速度",
+    "dim_intelligence": "智能",
+    "dim_guardrails": "护栏",
+    "dim_score": "评分",
+    "dim_context": "上下文",
+    "filterAny": "不限",
+    "filterClear": "清除筛选",
+    "selectAllVisible": "全选",
+    "selectTop10": "选 Top 10",
+    "filterButton": "筛选",
+    "clearSelection": "取消选中"
   },
   "strategies": {
     "explore": "探索未测模型",

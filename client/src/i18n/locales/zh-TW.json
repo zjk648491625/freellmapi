@@ -323,7 +323,19 @@
     "strategy_best_of": "擇優",
     "strategy_best_of_help": "直接回傳最強的單一回回答案，不呼叫評審。",
     "exposePanel": "公開面板細節（x_fusion）",
-    "exposePanelHelp": "在回應的 x_fusion 欄位附上每個成員的回答與評審中繼資料。"
+    "exposePanelHelp": "在回應的 x_fusion 欄位附上每個成員的回答與評審中繼資料。",
+    "dim_reliability": "穩定",
+    "dim_speed": "速度",
+    "dim_intelligence": "智慧",
+    "dim_guardrails": "護欄",
+    "dim_score": "評分",
+    "dim_context": "上下文",
+    "filterAny": "不限",
+    "filterClear": "清除篩選",
+    "selectAllVisible": "全選",
+    "selectTop10": "選 Top 10",
+    "filterButton": "篩選",
+    "clearSelection": "取消選取"
   },
   "strategies": {
     "explore": "探索未測模型",
