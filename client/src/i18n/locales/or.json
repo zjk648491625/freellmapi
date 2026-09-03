@@ -335,7 +335,9 @@
     "selectAllVisible": "Select all",
     "selectTop10": "Top 10",
     "filterButton": "Filters",
-    "clearSelection": "Deselect"
+    "clearSelection": "Deselect",
+    "dim_catalog": "Catalog",
+    "catalogHint": "Catalog-calibrated composite (tier + ranks) from the published feed — identical in every deployment, independent of local traffic. Compare with 评分 to spot models under- or over-performing here."
   },
   "strategies": {
     "explore": "ମପାଯାଇନଥିବା ମଡେଲଗୁଡ଼ିକୁ ଅନୁସନ୍ଧାନ କରନ୍ତୁ",

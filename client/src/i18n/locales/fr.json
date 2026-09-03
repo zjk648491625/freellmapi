@@ -335,7 +335,9 @@
     "selectAllVisible": "Tout sélectionner",
     "selectTop10": "Choisir le Top 10",
     "filterButton": "Filtres",
-    "clearSelection": "Désélectionner"
+    "clearSelection": "Désélectionner",
+    "dim_catalog": "Score catalogue",
+    "catalogHint": "Composite calibré par le catalogue (tier + rangs) depuis le flux publié — identique dans chaque déploiement, indépendant du trafic local. À comparer au Score pour repérer les modèles atypiques ici."
   },
   "strategies": {
     "explore": "Explorer les modèles non mesurés",

@@ -335,7 +335,9 @@
     "selectAllVisible": "全选",
     "selectTop10": "选 Top 10",
     "filterButton": "筛选",
-    "clearSelection": "取消选中"
+    "clearSelection": "取消选中",
+    "dim_catalog": "目录分",
+    "catalogHint": "平台目录标定的综合分（档位+排名），来自发布 feed——所有部署算出同一个值，与本机流量无关。与「评分」并列可发现本机表现异常的模型。"
   },
   "strategies": {
     "explore": "探索未测模型",

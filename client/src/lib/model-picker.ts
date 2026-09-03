@@ -8,7 +8,7 @@ import type { FallbackEntry, RoutingScore } from './routing'
 
 // Sort axes over the picker's logical models. 'default' keeps the server's
 // chain order (the same order the option list arrives in).
-export type SortKey = 'default' | 'reliability' | 'speed' | 'intelligence' | 'guardrails' | 'score' | 'context'
+export type SortKey = 'default' | 'reliability' | 'speed' | 'intelligence' | 'guardrails' | 'score' | 'catalog' | 'context'
 
 // Quality bands on the 0..1 routing axes (rendered ×100, e.g. '≥ 70').
 export type QualityBand = 'any' | 'ge50' | 'ge70' | 'ge85'
@@ -38,10 +38,32 @@ export const CONTEXT_BANDS: { key: ContextBand; min: number; label: string }[] =
   { key: 'ge1m', min: 1_000_000, label: '1M+' },
 ]
 
+// ── Catalog composite score (目录分) ─────────────────────────────────────────
+// A DISPLAY-ONLY quality number derived purely from the catalog feed's own
+// metadata: sizeLabel (cross-provider capability tier) + intelligence/speed
+// rank. NO local traffic, NO min-max over the enabled chain — the same feed
+// version yields the same number in every deployment, unlike the bandit score.
+// Tier dominates (the worst Frontier model still outscores the best Large
+// one); within a tier the ranks compress with sqrt so top edits are visible.
+export const CATALOG_TIER_BASE: Record<string, number> = {
+  Frontier: 90, Large: 70, Medium: 50, Small: 30,
+}
+const CATALOG_RANK_SPAN = Math.sqrt(1000) - 1
+
+export function catalogCompositeScore(sizeLabel: string, intelligenceRank: number, speedRank: number): number {
+  const base = CATALOG_TIER_BASE[sizeLabel] ?? 10
+  const ir = Math.min(1000, Math.max(1, intelligenceRank || 1))
+  const sr = Math.min(1000, Math.max(1, speedRank || 1))
+  const intelAdj = -(Math.sqrt(ir) - 1) / CATALOG_RANK_SPAN * 8
+  const speedAdj = -(Math.sqrt(sr) - 1) / CATALOG_RANK_SPAN * 4
+  return Math.round((base + intelAdj + speedAdj) * 10) / 10
+}
+
 // Per-logical-model aggregates for sort/filter. Groups inherit the BEST
 // member's axis value (the same convention the Models table uses: a group is
 // as good as its best provider), and the EARLIEST first-seen date.
 export interface PickerOptionStats {
+  catalogScore?: number
   reliability?: number
   speed?: number
   intelligence?: number
@@ -73,7 +95,9 @@ export function buildPickerStats(entries: FallbackEntry[], scores: RoutingScore[
   const out = new Map<string, PickerOptionStats>()
   for (const { value, entries: members } of groups.values()) {
     const scored = members.map(e => scoreByDb.get(e.modelDbId)).filter((s): s is RoutingScore => !!s)
+    const catalogScores = members.map(e => catalogCompositeScore(e.sizeLabel, e.intelligenceRank, e.speedRank))
     out.set(value, {
+      catalogScore: catalogScores.length ? Math.max(...catalogScores) : undefined,
       reliability: best(scored.map(s => s.reliability)),
       speed: best(scored.map(s => s.speed)),
       intelligence: best(scored.map(s => s.intelligence)),
@@ -155,6 +179,7 @@ export function filterSortPickerOptions(
       case 'intelligence': v = s.intelligence ?? null; break
       case 'guardrails': v = s.guardrails ?? null; break
       case 'score': v = s.score ?? null; break
+      case 'catalog': v = s.catalogScore ?? null; break
       case 'context': v = s.contextMax ?? null; break
       default: v = null
     }

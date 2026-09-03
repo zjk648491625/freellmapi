@@ -335,7 +335,9 @@
     "selectAllVisible": "Seleccionar todo",
     "selectTop10": "Elegir Top 10",
     "filterButton": "Filtros",
-    "clearSelection": "Deseleccionar"
+    "clearSelection": "Deseleccionar",
+    "dim_catalog": "Punt. catálogo",
+    "catalogHint": "Compuesto calibrado por el catálogo (nivel + rangos) del feed publicado — idéntico en cada despliegue, independiente del tráfico local. Compáralo con la Puntuación para detectar modelos atípicos aquí."
   },
   "strategies": {
     "explore": "Explorar modelos sin mediciones",

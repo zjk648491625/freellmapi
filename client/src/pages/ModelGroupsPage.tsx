@@ -557,6 +557,7 @@ export default function ModelGroupsPage() {
                                     <SortTh k="intelligence" label={t('modelGroups.dim_intelligence')} sortBy={sortBy} sortDir={sortDir} onSort={clickSort} />
                                     <SortTh k="guardrails" label={t('modelGroups.dim_guardrails')} tip={t('strategies.guardrailsTooltip')} sortBy={sortBy} sortDir={sortDir} onSort={clickSort} />
                                     <SortTh k="score" label={t('modelGroups.dim_score')} tip={t('strategies.scoreTooltip')} sortBy={sortBy} sortDir={sortDir} onSort={clickSort}  align="right" />
+                                    <SortTh k="catalog" label={t('modelGroups.dim_catalog')} tip={t('modelGroups.catalogHint')} align="right" sortBy={sortBy} sortDir={sortDir} onSort={clickSort} />
                                     <SortTh k="context" label={t('modelGroups.dim_context')} sortBy={sortBy} sortDir={sortDir} onSort={clickSort}  align="right" />
                                   </tr>
                                 </thead>
@@ -583,8 +584,13 @@ export default function ModelGroupsPage() {
                                         </td>
                                         <td className="py-1.5 pr-2 align-middle">
                                           <span className="block max-w-[13rem] truncate text-xs font-medium leading-tight" title={o.label}>{o.label}</span>
-                                          <span className="block max-w-[13rem] truncate font-mono text-[10px] leading-tight text-muted-foreground/70" title={o.value}>
-                                            {o.value}{o.providerCount > 1 ? ` · ${t('models.providerCount', { count: o.providerCount })}` : ''}
+                                          <span className="block max-w-[13rem] font-mono text-[10px] leading-tight text-muted-foreground/70">
+                                            <span className="block truncate" title={o.value}>{o.value}</span>
+                                            {o.providerCount > 1 && (
+                                              <Tooltip text={t('models.servedBy', { providers: [...new Set(o.platforms)].join('\n') })}>
+                                                <span className="mt-0.5 inline-block rounded-full px-1.5 py-0.5 bg-muted text-muted-foreground not-italic">{t('models.providerCount', { count: o.providerCount })}</span>
+                                              </Tooltip>
+                                            )}
                                           </span>
                                         </td>
                                         <td className="py-1.5 pr-2 align-middle">{s?.reliability === undefined ? <AxisNoData /> : <AxisBar value={s.reliability} color="#22c55e" decimals={2} />}</td>
@@ -595,6 +601,9 @@ export default function ModelGroupsPage() {
                                         </td>
                                         <td className="py-1.5 pr-2 text-right align-middle font-mono text-[11px] tabular-nums">
                                           {s?.score !== undefined ? s.score.toFixed(3) : '–'}
+                                        </td>
+                                        <td className="py-1.5 pr-2 text-right align-middle font-mono text-[11px] text-muted-foreground tabular-nums" title={t('modelGroups.catalogHint')}>
+                                          {s?.catalogScore !== undefined ? s.catalogScore.toFixed(1) : '–'}
                                         </td>
                                         <td className="py-1.5 pr-2 text-right align-middle font-mono text-[10px] text-muted-foreground tabular-nums">
                                           {s?.contextMax != null ? formatContext(s.contextMax) : '–'}

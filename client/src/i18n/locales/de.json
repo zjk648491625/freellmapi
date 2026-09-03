@@ -335,7 +335,9 @@
     "selectAllVisible": "Alle auswählen",
     "selectTop10": "Top 10 wählen",
     "filterButton": "Filter",
-    "clearSelection": "Auswahl aufheben"
+    "clearSelection": "Auswahl aufheben",
+    "dim_catalog": "Katalog-Score",
+    "catalogHint": "Katalog-kalibrierter Composite (Tier + Ränge) aus dem veröffentlichten Feed — in jeder Installation identisch, unabhängig vom lokalen Traffic. Neben dem Score findest du Modelle, die hier auffällig abschneiden."
   },
   "strategies": {
     "explore": "Unvermessene Modelle erkunden",

@@ -31,7 +31,10 @@ import type { ChatMessage, ChatCompletionChoice, ChatCompletionResponse, ChatToo
 import {
   routePinnedModel, routeRequest, resolveFusionCandidate,
   recordRateLimitHit, recordSuccess, type RouteResult, type FusionCandidate,
+  resolveModelGroupCandidates,
 } from './router.js';
+import { isUnifyEnabled, getModelGroups, resolveRequestedIdForDispatch } from './model-groups.js';
+import { getDb } from '../db/index.js';
 import {
   recordRequest, recordTokens, setCooldown, getCooldownDurationForLimit,
   getCooldownDecisionForLimit,
@@ -357,18 +360,74 @@ export async function runGroupFanout(params: {
   // NOT a fusion coupling). Capability drops and duplicates are reported, not
   // fatal; the hard cap of 8 mirrors fusion's explicit-panel ceiling.
   const requireTools = (options.tools?.length ?? 0) > 0;
-  const panel: FusionCandidate[] = [];
+  // One SLOT per listed ref (panel size and cross-model diversity unchanged),
+  // but a slot now carries the logical model's WHOLE provider queue, rank
+  // ordered. A slot calls the best-ranked provider first and moves to the
+  // model's next provider ONLY after the previous one failed; a first-try
+  // success behaves exactly as the old single-provider panel. An explicit
+  // platform:model ref stays pinned to that provider's copy (#580 semantics).
+  const rankOf = (modelDbId: number): number =>
+    (getDb().prepare('SELECT intelligence_rank FROM models WHERE id = ?').get(modelDbId) as { intelligence_rank?: number } | undefined)?.intelligence_rank ?? 0;
+  const resolveRefQueue = (ref: string, refs: readonly string[]): FusionCandidate[] => {
+    const toCand = (row: {
+      model_db_id: number; platform: string; model_id: string; display_name: string;
+      size_label: string; supports_vision: number; supports_tools: number; intelligence_rank: number;
+    }): FusionCandidate => ({
+      modelDbId: row.model_db_id, platform: row.platform, modelId: row.model_id,
+      displayName: row.display_name, sizeLabel: row.size_label,
+      supportsVision: row.supports_vision, supportsTools: row.supports_tools,
+    });
+    // 1) Bare model id → EVERY enabled provider row sharing that id across
+    //    platforms, rank ordered.
+    const merged = (getDb().prepare(`
+      SELECT m.id as model_db_id, m.platform, m.model_id, m.display_name,
+             m.size_label, m.supports_vision, m.supports_tools, m.intelligence_rank
+      FROM models m
+      WHERE m.model_id = ? AND m.enabled = 1
+      ORDER BY m.intelligence_rank ASC, m.id ASC
+    `).all(ref) as Array<{ model_db_id: number; platform: string; model_id: string; display_name: string; size_label: string; supports_vision: number; supports_tools: number; intelligence_rank: number; }>).map(toCand);
+    // 2) Unify identity: a canonical slug (what the group editor saves) names a
+    //    LOGICAL model whose provider rows may carry DIFFERENT model_id strings
+    //    per platform — the whole unify group joins the failover queue. This is
+    //    the whole point: one listed member = one logical model, and a dead
+    //    provider must not end it (#navy vs #nvidia minimax-m3 report).
+    if (isUnifyEnabled()) {
+      const resolved = resolveRequestedIdForDispatch(ref, getModelGroups());
+      if (resolved && resolved.memberDbIds.length > 0) {
+        const have = new Set(merged.map(c => c.modelDbId));
+        const groupRows = resolveModelGroupCandidates(resolved.memberDbIds, resolved.demotedDbIds)
+          .map(toCand)
+          .filter(c => !have.has(c.modelDbId));
+        merged.push(...groupRows);
+        merged.sort((a, b) => {
+          const ra = rankOf(a.modelDbId), rb = rankOf(b.modelDbId);
+          return ra !== rb ? ra - rb : a.modelDbId - b.modelDbId;
+        });
+      }
+    }
+    // 3) Rows that ANOTHER listed ref names exactly stay with that ref, so
+    //    explicitly listed distinct models keep their own panel slots.
+    const others = new Set(refs.filter(r => r !== ref));
+    const filtered = merged.filter(c => !others.has(c.modelId));
+    if (filtered.length > 0) return filtered;
+    const single = resolveFusionCandidate(ref);
+    return single ? [single] : [];
+  };
+  const panel: FusionCandidate[][] = [];
   const dropped: string[] = [];
-  const seen = new Set<number>();
+  const seenRefs = new Set<string>();
   for (const ref of group.models) {
     if (panel.length >= GROUP_PANEL_HARD_CAP) { dropped.push(ref + ' (over cap of ' + GROUP_PANEL_HARD_CAP + ')'); continue; }
-    const cand = resolveFusionCandidate(ref);
-    if (!cand) { dropped.push(ref + ' (unknown or disabled)'); continue; }
-    if (requireTools && !cand.supportsTools) { dropped.push(ref + ' (no tool-calling support)'); continue; }
-    if (vision && !cand.supportsVision) { dropped.push(ref + ' (no vision support)'); continue; }
-    if (seen.has(cand.modelDbId)) continue; // de-dup repeats
-    seen.add(cand.modelDbId);
-    panel.push(cand);
+    if (seenRefs.has(ref)) continue; // duplicate ref → duplicate slot
+    seenRefs.add(ref);
+    let queue = resolveRefQueue(ref, group.models);
+    if (queue.length === 0) { dropped.push(ref + ' (unknown or disabled)'); continue; }
+    // Capability: keep the rows that can serve THIS request; the ref survives
+    // if any of its providers can. A row may back up several slots — per-slot
+    // failover is independent by design.
+    queue = queue.filter(c => (!requireTools || c.supportsTools) && (!vision || c.supportsVision));
+    if (queue.length === 0) { dropped.push(ref + ' (no capable provider left)'); continue; }
+    panel.push(queue);
   }
   if (panel.length === 0) {
     throw new GroupStrategyError(
@@ -377,16 +436,19 @@ export async function runGroupFanout(params: {
     );
   }
 
-  // Dispatch ONE panel slot: hard-pinned to its model, rotating only that
-  // model's keys (so a key 429 doesn't collapse the slot onto a duplicate
-  // backend — fusion issue #326 semantics). No overflow: the operator named
-  // exact members, so a failed slot is never substituted.
-  const runSlot = (cand: FusionCandidate): Promise<PanelAnswer> =>
-    runModelCall(
-      (skipKeys) => routePinnedModel(cand.modelDbId, estimatedTokens, skipKeys),
-      messages, options, estimatedTokens, MAX_SLOT_ATTEMPTS,
-    ).then((outcome): PanelAnswer => {
-      const answer: PanelAnswer = outcome.ok
+  // Dispatch ONE panel slot per queue: the best-ranked provider serves first;
+  // only a FAILED call moves the slot to the model's next provider (a success
+  // is indistinguishable from the old single-provider panel). Each provider
+  // gets the same MAX_SLOT_ATTEMPTS key-rotation budget the old slot had, and
+  // provider switching happens only on failure — a healthy provider is never
+  // proactively bypassed (the #326 quota-collapse concern stays bounded).
+  const runSlot = async (queue: FusionCandidate[]): Promise<PanelAnswer> => {
+    let last: PanelAnswer | null = null;
+    for (const cand of queue) {
+      const answer: PanelAnswer = await runModelCall(
+        (skipKeys) => routePinnedModel(cand.modelDbId, estimatedTokens, skipKeys),
+        messages, options, estimatedTokens, MAX_SLOT_ATTEMPTS,
+      ).then((outcome): PanelAnswer => outcome.ok
         ? {
             modelDbId: cand.modelDbId,
             platform: cand.platform,
@@ -398,15 +460,21 @@ export async function runGroupFanout(params: {
             rawChoice: outcome.rawChoice,
             usage: outcome.usage,
           }
-        : { modelDbId: cand.modelDbId, platform: cand.platform, modelId: cand.modelId, displayName: cand.displayName, status: 'failed', error: outcome.error };
-      hooks?.onPanel?.({ platform: answer.platform, model: answer.modelId, status: answer.status, content: answer.content, tool_calls: answer.toolCalls, error: answer.error });
-      return answer;
-    });
+        : { modelDbId: cand.modelDbId, platform: cand.platform, modelId: cand.modelId, displayName: cand.displayName, status: 'failed', error: outcome.error });
+      if (answer.status === 'ok') {
+        hooks?.onPanel?.({ platform: answer.platform, model: answer.modelId, status: answer.status, content: answer.content, tool_calls: answer.toolCalls, error: answer.error });
+        return answer;
+      }
+      last = answer;
+    }
+    if (last) hooks?.onPanel?.({ platform: last.platform, model: last.modelId, status: last.status, content: last.content, tool_calls: last.toolCalls, error: last.error });
+    return last!;
+  };
 
   const settled = await Promise.allSettled(panel.map(runSlot));
   const answers: PanelAnswer[] = settled.map((s, i) => s.status === 'fulfilled'
     ? s.value
-    : { modelDbId: panel[i].modelDbId, platform: panel[i].platform, modelId: panel[i].modelId, displayName: panel[i].displayName, status: 'failed', error: sanitizeProviderErrorMessage((s as PromiseRejectedResult).reason?.message) });
+    : { modelDbId: panel[i][0].modelDbId, platform: panel[i][0].platform, modelId: panel[i][0].modelId, displayName: panel[i][0].displayName, status: 'failed', error: sanitizeProviderErrorMessage((s as PromiseRejectedResult).reason?.message) });
 
   const survivors = answers.filter(a => a.status === 'ok' && (a.content || (a.toolCalls?.length ?? 0) > 0));
   let totalUsage: TokenUsage = { ...ZERO_USAGE };
@@ -451,7 +519,7 @@ export async function runGroupFanout(params: {
         synthesized: false,
         judge: null,
         group: group.name,
-        panel_requested: panel.map(p => p.modelId),
+        panel_requested: panel.map(q => q[0].modelId),
         dropped,
         tool_call_winner: winner,
         panel: answers.map(a => ({
@@ -557,7 +625,7 @@ export async function runGroupFanout(params: {
       synthesized,
       judge: judgeModelLabel,
       group: group.name,
-      panel_requested: panel.map(p => p.modelId),
+      panel_requested: panel.map(q => q[0].modelId),
       dropped,
       panel: answers.map(a => ({
         model: a.modelId,

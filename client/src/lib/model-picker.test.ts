@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  buildPickerStats, filterSortPickerOptions, pickerFiltersActive,
+  buildPickerStats, catalogCompositeScore, filterSortPickerOptions, pickerFiltersActive,
   NO_PICKER_FILTERS,
   type PickerFilters,
 } from './model-picker'
@@ -103,6 +103,39 @@ describe('buildPickerStats', () => {
     expect(s.reliability).toBeUndefined()
     expect(s.guardrails).toBeUndefined()
     expect(s.score).toBeUndefined()
+  })
+})
+
+// ── catalogCompositeScore (目录分) ────────────────────────────────────────────
+describe('catalogCompositeScore', () => {
+  it('is deterministic and tier-dominant: worst Frontier beats best Large', () => {
+    const frontierWorst = catalogCompositeScore('Frontier', 1000, 1000)
+    const largeBest = catalogCompositeScore('Large', 1, 1)
+    expect(frontierWorst).toBeGreaterThan(largeBest)
+    // same inputs → same number, in any deployment
+    expect(catalogCompositeScore('Frontier', 2, 5)).toBe(catalogCompositeScore('Frontier', 2, 5))
+  })
+
+  it('orders by rank within a tier and floors unknown tiers', () => {
+    expect(catalogCompositeScore('Frontier', 1, 1)).toBeGreaterThan(catalogCompositeScore('Frontier', 10, 10))
+    expect(catalogCompositeScore('Medium', 1, 1)).toBeGreaterThan(catalogCompositeScore('Small', 1, 1))
+    const unknown = catalogCompositeScore('Mystery', 1, 1)
+    expect(unknown).toBeLessThan(catalogCompositeScore('Small', 1000, 1000))
+    // rank 0/absent clamps to the best rank rather than NaN
+    expect(catalogCompositeScore('Large', 0, 0)).toBe(catalogCompositeScore('Large', 1, 1))
+  })
+
+  it('aggregates a group by its BEST member and sorts as an axis', () => {
+    const a = entry({ modelId: 'm1', groupKey: 'g', canonicalId: 'c', sizeLabel: 'Frontier', intelligenceRank: 1, speedRank: 1 })
+    const b = entry({ modelId: 'm2', groupKey: 'g', canonicalId: 'c', sizeLabel: 'Large', intelligenceRank: 1, speedRank: 1 })
+    const stats = buildPickerStats([a, b], [])
+    expect(stats.get('c')!.catalogScore).toBe(catalogCompositeScore('Frontier', 1, 1))
+    const opts = [opt('c', 'C'), opt('x', 'X')]
+    const st = new Map<string, any>([
+      ['c', { catalogScore: 89.7 }],
+      ['x', { catalogScore: 90 }],
+    ])
+    expect(filterSortPickerOptions(opts, st, f({ sortBy: 'catalog' })).map(o => o.value)).toEqual(['x', 'c'])
   })
 })
 

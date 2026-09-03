@@ -9,14 +9,23 @@ afterEach(() => {
 
 describe('loadConfig', () => {
   it('returns sensible defaults when no env vars are set', () => {
-    const cfg = loadConfig();
-    expect(cfg.port).toBe(3001);
-    expect(cfg.host).toBe('::');
-    expect(cfg.dbPath).toBeNull();
-    expect(cfg.dashboardOrigins).toEqual([]);
-    expect(cfg.clientDist).toBeNull();
-    expect(cfg.proxyRateLimitRpm).toBe(120);
-    expect(cfg.serveStaticAssets).toBe(true);
+    // The host machine may legitimately export PORT/HOST (a global PORT broke
+    // this test once) — scrub the keys this suite manages for the duration of
+    // the assertion so "no env vars" actually holds, then restore them.
+    const saved = ENV_KEYS.map(k => [k, process.env[k]] as const);
+    ENV_KEYS.forEach(k => delete process.env[k]);
+    try {
+      const cfg = loadConfig();
+      expect(cfg.port).toBe(3001);
+      expect(cfg.host).toBe('::');
+      expect(cfg.dbPath).toBeNull();
+      expect(cfg.dashboardOrigins).toEqual([]);
+      expect(cfg.clientDist).toBeNull();
+      expect(cfg.proxyRateLimitRpm).toBe(120);
+      expect(cfg.serveStaticAssets).toBe(true);
+    } finally {
+      saved.forEach(([k, v]) => { if (v !== undefined) process.env[k] = v; });
+    }
   });
 
   it('reads PORT and HOST from env', () => {

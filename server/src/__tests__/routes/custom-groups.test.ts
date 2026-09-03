@@ -4,6 +4,7 @@ import { createApp } from '../../app.js';
 import { initDb, getDb, getUnifiedApiKey } from '../../db/index.js';
 import { encrypt } from '../../lib/crypto.js';
 import { setCustomGroups } from '../../services/custom-groups.js';
+import { getModelGroups } from '../../services/model-groups.js';
 import { setRoutingStrategy } from '../../services/router.js';
 import { mintDashboardToken, isGatedApiPath } from '../helpers/auth.js';
 
@@ -611,6 +612,81 @@ describe('Custom model groups (自定义模型组)', () => {
     expect(judgeCalls).toBe(0);
     // expose_panel defaults off — no x_fusion payload.
     expect(body.x_fusion).toBeUndefined();
+  });
+
+  it('multi-provider ref: slot fails over to the model\'s next provider on failure', async () => {
+    // One logical model on TWO platforms; the bare id expands to both rows.
+    addModel('groq', 'tum-multi', 'Multi Provider Model', 1);
+    addModel('cerebras', 'tum-multi', 'Multi Provider Model', 2);
+    await request(app, 'PUT', '/api/custom-model-groups', {
+      groups: [{ name: 'mp', models: ['tum-multi'], strategy: 'best_of', expose_panel: true }],
+    });
+    const orig = global.fetch;
+    vi.spyOn(global, 'fetch').mockImplementation(async (url: any, init?: any) => {
+      const u = String(url);
+      if (u.includes('api.groq.com')) return new Response('Groq API error 429: rate limited', { status: 429 });
+      if (u.includes('api.cerebras.ai')) return completion('tum-multi', 'from cerebras copy');
+      return orig(url, init);
+    });
+    const { status, body } = await request(app, 'POST', '/v1/chat/completions', {
+      model: 'mp', messages: [{ role: 'user', content: 'hi' }],
+    }, authHeaders());
+    expect(status).toBe(200);
+    // The slot moved to the model's SECOND provider instead of failing outright.
+    expect(body.choices[0].message.content).toBe('from cerebras copy');
+    expect(body.x_fusion.panel[0].platform).toBe('cerebras');
+    expect(body.x_fusion.panel[0].status).toBe('ok');
+  });
+
+  it('multi-provider ref: first provider success keeps the original single-call behavior', async () => {
+    addModel('groq', 'tum-multi', 'Multi Provider Model', 1);
+    addModel('cerebras', 'tum-multi', 'Multi Provider Model', 2);
+    await request(app, 'PUT', '/api/custom-model-groups', {
+      groups: [{ name: 'mp', models: ['tum-multi'], strategy: 'best_of', expose_panel: true }],
+    });
+    const orig = global.fetch;
+    const calls: string[] = [];
+    vi.spyOn(global, 'fetch').mockImplementation(async (url: any, init?: any) => {
+      const u = String(url);
+      if (u.includes('api.groq.com')) { calls.push('groq'); return completion('tum-multi', 'from groq'); }
+      if (u.includes('api.cerebras.ai')) { calls.push('cerebras'); return completion('tum-multi', 'from cerebras copy'); }
+      return orig(url, init);
+    });
+    const { status, body } = await request(app, 'POST', '/v1/chat/completions', {
+      model: 'mp', messages: [{ role: 'user', content: 'hi' }],
+    }, authHeaders());
+    expect(status).toBe(200);
+    expect(body.choices[0].message.content).toBe('from groq');
+    // Success on the best-ranked provider: the second is never contacted.
+    expect(calls).toEqual(['groq']);
+    expect(body.x_fusion.panel[0].platform).toBe('groq');
+  });
+
+  it('multi-provider ref with DIFFERENT per-platform model ids: unify siblings join the failover queue', async () => {
+    // The reported case: one logical model whose rows carry different ids per
+    // platform. The editor saves the CANONICAL slug; the slot must fail over
+    // across BOTH rows, not stay pinned to the first one.
+    addModel('groq', 'navy/minimax-m3', 'MiniMax M3', 1);
+    addModel('cerebras', 'minimaxai/minimax-m3', 'MiniMax M3', 2);
+    const g = getModelGroups().find(gr => gr.members.some(m => m.model_id === 'navy/minimax-m3'));
+    expect(g?.canonicalId).toBeTruthy();
+    await request(app, 'PUT', '/api/custom-model-groups', {
+      groups: [{ name: 'mp3', models: [g!.canonicalId], strategy: 'best_of', expose_panel: true }],
+    });
+    const orig = global.fetch;
+    vi.spyOn(global, 'fetch').mockImplementation(async (url: any, init?: any) => {
+      const u = String(url);
+      if (u.includes('api.groq.com')) return new Response('Groq API error 429: rate limited', { status: 429 });
+      if (u.includes('api.cerebras.ai')) return completion('minimaxai/minimax-m3', 'from cerebras copy');
+      return orig(url, init);
+    });
+    const { status, body } = await request(app, 'POST', '/v1/chat/completions', {
+      model: 'mp3', messages: [{ role: 'user', content: 'hi' }],
+    }, authHeaders());
+    expect(status).toBe(200);
+    expect(body.choices[0].message.content).toBe('from cerebras copy');
+    expect(body.x_fusion.panel[0].platform).toBe('cerebras');
+    expect(body.x_fusion.panel[0].status).toBe('ok');
   });
 
   it('streams group strategy synthesize with _fusion trace frames', async () => {

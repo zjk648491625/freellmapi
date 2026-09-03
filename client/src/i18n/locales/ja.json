@@ -335,7 +335,9 @@
     "selectAllVisible": "すべて選択",
     "selectTop10": "Top 10 を選択",
     "filterButton": "フィルタ",
-    "clearSelection": "選択を解除"
+    "clearSelection": "選択を解除",
+    "dim_catalog": "カタログ分",
+    "catalogHint": "公開フィードのカタログ基準スコア（ティア+ランク）。どのデプロイでも同じ値になり、ローカルのトラフィックに依存しません。「スコア」と並べると、この環境で想定外のモデルを見つけられます。"
   },
   "strategies": {
     "explore": "未計測のモデルを探索",

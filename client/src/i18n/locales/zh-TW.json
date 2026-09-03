@@ -335,7 +335,9 @@
     "selectAllVisible": "全選",
     "selectTop10": "選 Top 10",
     "filterButton": "篩選",
-    "clearSelection": "取消選取"
+    "clearSelection": "取消選取",
+    "dim_catalog": "目錄分",
+    "catalogHint": "平台目錄標定的綜合分（檔位+排名），來自發布 feed——所有部署算出同一個值，與本機流量無關。與「評分」並列可發現本機表現異常的模型。"
   },
   "strategies": {
     "explore": "探索未測模型",
