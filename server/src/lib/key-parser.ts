@@ -38,6 +38,7 @@ export interface ParseResult {
 }
 
 export const PREFIX_MAP: Record<string, string> = {
+  ACLIDE_: 'aclide',
   GOOGLE_: 'google',
   GEMINI_: 'google',
   GROQ_: 'groq',
@@ -45,8 +46,33 @@ export const PREFIX_MAP: Record<string, string> = {
   SAIL_: 'sail',
   SAILRESEARCH_: 'sail',
   SAIL_RESEARCH_: 'sail',
+  ELECTRONHUB_: 'electronhub',
+  ELECTRON_HUB_: 'electronhub',
+  EXPERIENTIAL_: 'experiential',
+  EXPERIENTIALLABS_: 'experiential',
+  EXPERIENTIAL_LABS_: 'experiential',
+  EXPLABS_: 'experiential',
+  ROUTER9_: 'router9',
+  ROUTER_9_: 'router9',
+  SEPTOR_: 'septor',
+  SEPTORLABS_: 'septor',
+  SEPTOR_LABS_: 'septor',
+  CLOD_: 'clod',
+  SPEECHIFY_: 'speechify',
+  BLAZE_: 'blaze',
+  BLAZEAPI_: 'blaze',
+  LUCIDITY_: 'lucidity',
+  AIRFORCE_: 'airforce',
+  API_AIRFORCE_: 'airforce',
+  DREAMPROMPTING_: 'dreamprompting',
+  DREAM_PROMPTING_: 'dreamprompting',
+  WATERFALL_: 'waterfall',
+  LOGFARE_: 'logfare',
   BAI_: 'bai',
   B_AI_: 'bai',
+  RADEON_: 'radeon',
+  AMD_RADEON_: 'radeon',
+  AMD_TOKENFACTORY_: 'radeon',
   NVIDIA_: 'nvidia',
   MISTRAL_: 'mistral',
   OPENROUTER_: 'openrouter',
@@ -106,10 +132,37 @@ export const AUTH_JSON_PROVIDER_MAP: Record<string, string> = {
   google: 'google',
   groq: 'groq',
   sail: 'sail',
+  aclide: 'aclide',
   'sail-research': 'sail',
   sailresearch: 'sail',
+  electronhub: 'electronhub',
+  'electron-hub': 'electronhub',
+  experiential: 'experiential',
+  experientiallabs: 'experiential',
+  'experiential-labs': 'experiential',
+  explabs: 'experiential',
+  router9: 'router9',
+  'router-9': 'router9',
+  septor: 'septor',
+  septorlabs: 'septor',
+  'septor-labs': 'septor',
+  clod: 'clod',
+  speechify: 'speechify',
+  blaze: 'blaze',
+  blazeapi: 'blaze',
+  lucidity: 'lucidity',
+  airforce: 'airforce',
+  'api.airforce': 'airforce',
+  dreamprompting: 'dreamprompting',
+  'dream-prompting': 'dreamprompting',
+  waterfall: 'waterfall',
+  logfare: 'logfare',
   bai: 'bai',
   'b-ai': 'bai',
+  radeon: 'radeon',
+  'radeon-cloud': 'radeon',
+  'amd-radeon': 'radeon',
+  'amd-tokenfactory': 'radeon',
   openrouter: 'openrouter',
   'ollama-cloud': 'ollama',
   ollama: 'ollama',
@@ -347,6 +400,35 @@ export function parseExportJson(content: string): ParseResult | null {
 }
 
 /**
+ * Split one CSV line into fields honouring RFC 4180 quoting: a quoted field
+ * may contain commas and `""` escapes. Our own CSV export quotes every cell
+ * and escapes quotes in labels, so a label like `work, primary` or `say "hi"`
+ * is routine — the previous single regex could not represent those lines and
+ * silently dropped the whole row on re-import.
+ */
+function splitCsvLine(line: string): string[] {
+  const fields: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else inQuotes = false;
+      } else cur += ch;
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      fields.push(cur);
+      cur = '';
+    } else cur += ch;
+  }
+  fields.push(cur);
+  return fields;
+}
+
+/**
  * Parse CSV format: platform,key,label[,base_url] (with optional header row).
  * The trailing base_url column is what makes a 'custom' row importable — an
  * endpoint is identified by its URL, so a custom key without one is orphaned.
@@ -361,14 +443,10 @@ export function parseCsv(content: string): KeyPair[] {
   const startIdx = lines[0]!.toLowerCase().startsWith('platform,') ? 1 : 0;
 
   for (let i = startIdx; i < lines.length; i++) {
-    const line = lines[i]!;
-    // Simple CSV parsing: split on comma, strip quotes
-    const match = line.match(/^"?([^"]*?)"?,"?([^"]*?)"?(?:,"?([^"]*?)"?)?(?:,"?([^"]*?)"?)?$/);
-    if (!match) continue;
-
-    const platform = (match[1] ?? '').trim();
-    const key = (match[2] ?? '').trim();
-    const baseUrl = (match[4] ?? '').trim();
+    const fields = splitCsvLine(lines[i]!);
+    const platform = (fields[0] ?? '').trim();
+    const key = (fields[1] ?? '').trim();
+    const baseUrl = (fields[3] ?? '').trim();
 
     if (!key || !platform) continue;
 

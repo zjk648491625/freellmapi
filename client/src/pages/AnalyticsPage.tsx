@@ -6,6 +6,7 @@ import {
 } from 'recharts'
 import {
   Activity,
+  Archive,
   ArrowDown,
   ArrowUp,
   Bot,
@@ -141,6 +142,21 @@ interface SummaryResponse {
   pinHonoredRequests: number
   firstRequestAt: string | null
   lifetimeTotalRequests: number
+}
+
+interface CacheStatsResponse {
+  enabled: boolean
+  entries: number
+  // Hits carried by the entries currently held (restored from SQLite), and the
+  // provider round-trips / tokens they represent.
+  totalHits: number
+  estimatedRequestsSaved: number
+  savedTokens: number
+  // Lookups since the server started — the ratio's two halves. Kept separate
+  // from totalHits, which shrinks when entries are evicted.
+  lookupHits: number
+  lookupMisses: number
+  hitRate: number
 }
 
 interface ByPlatformRow {
@@ -306,7 +322,7 @@ function formatTokens(n?: number): string {
   return String(n)
 }
 
-function Stat({ icon: Icon, label, value, hint, className }: { icon: LucideIcon; label: string; value: string | number; hint?: string; className?: string }) {
+function Stat({ icon: Icon, label, value, sub, hint, className }: { icon: LucideIcon; label: string; value: string | number; sub?: string; hint?: string; className?: string }) {
   const card = (
     <div className="rounded-3xl border bg-card px-4 py-3">
       <div className="flex items-center justify-between gap-3">
@@ -316,6 +332,9 @@ function Stat({ icon: Icon, label, value, hint, className }: { icon: LucideIcon;
         </span>
       </div>
       <p className={`text-xl font-semibold tabular-nums mt-1 ${className ?? ''}`}>{value}</p>
+      {/* Optional second figure, so one card can carry two related numbers
+          instead of spending another slot in the summary row. */}
+      {sub ? <p className="text-[11px] text-muted-foreground tabular-nums truncate">{sub}</p> : null}
     </div>
   )
   // Same portal tooltip as the routing strategy chips. Opens BELOW the card:
@@ -542,6 +561,14 @@ export default function AnalyticsPage() {
     queryFn: () => apiFetch<SummaryResponse>(`/api/analytics/summary?range=${range}`),
   })
 
+  // Response-cache health: how often identical requests were served from memory
+  // (zero quota cost) vs. spending a free-tier slot. The cache is process-local,
+  // so these are lifetime-this-boot numbers, not range-filtered.
+  const { data: cacheStats } = useQuery({
+    queryKey: ['cache', 'stats'],
+    queryFn: () => apiFetch<CacheStatsResponse>('/api/cache/stats'),
+  })
+
   const { data: byPlatform = [] } = useQuery({
     queryKey: ['analytics', 'by-platform', range],
     queryFn: () => apiFetch<ByPlatformRow[]>(`/api/analytics/by-platform?range=${range}`),
@@ -703,7 +730,9 @@ export default function AnalyticsPage() {
         {/* Summary stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-4 gap-3">
           {summaryLoading ? (
-            Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-[74px] rounded-3xl" />)
+            // Same count as the cards below, cache card included, so the row
+            // does not reflow when the summary lands.
+            Array.from({ length: cacheStats?.enabled ? 9 : 8 }).map((_, i) => <Skeleton key={i} className="h-[74px] rounded-3xl" />)
           ) : (
             <>
               <Stat icon={Activity} label={t('analytics.requests')} value={summary?.totalRequests ?? 0} hint={requestsHint} />
@@ -718,6 +747,19 @@ export default function AnalyticsPage() {
                   The value is a 30-day projection; the hover hint tells the whole
                   story (actual period amount + whether it was extrapolated). */}
               <Stat icon={CircleDollarSign} label={t('analytics.estSavings')} value={`$${savings30d.toFixed(2)}`} hint={savingsHint} />
+              {/* Response-cache impact, as ONE card: hit rate with the tokens
+                  it gave back underneath. Rendered only when the cache is on,
+                  so installs that opted out neither lose a slot in this row nor
+                  see a misleading 0%. */}
+              {cacheStats?.enabled && (
+                <Stat
+                  icon={Archive}
+                  label={t('analytics.cacheHitRate')}
+                  value={`${Math.round(cacheStats.hitRate * 100)}%`}
+                  sub={t('analytics.cacheSavedTokens', { tokens: formatTokens(cacheStats.savedTokens) })}
+                  hint={t('analytics.cacheHitRateHint', { hits: cacheStats.lookupHits, misses: cacheStats.lookupMisses, requests: cacheStats.estimatedRequestsSaved })}
+                />
+              )}
             </>
           )}
         </div>

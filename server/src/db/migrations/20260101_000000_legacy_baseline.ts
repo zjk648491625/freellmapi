@@ -363,9 +363,6 @@ function seedModels(db: Db) {
  */
 function migrateModels(db: Db) {
   // 1) Replace outdated models in-place (preserves fallback_config & any references)
-  const renames: Array<[string, string, string, string, number, string, number | null, number | null, number]> = [
-    // platform, oldModelId, newModelId, newDisplayName, intelligenceRank, monthlyBudget, rpdLimit, contextWindow, sizeLabelPriority(unused)
-  ];
   const renameStmt = db.prepare(`
     UPDATE models
        SET model_id = ?, display_name = ?, intelligence_rank = ?,
@@ -2241,12 +2238,27 @@ function ensureUnifiedKey(db: Db) {
   if (!existing) {
     const key = `freellmapi-${crypto.randomBytes(24).toString('hex')}`;
     db.prepare("INSERT INTO settings (key, value) VALUES ('unified_api_key', ?)").run(key);
-    // Straight to stdout, deliberately bypassing the console redaction installed
-    // in index.ts: this is the one intentional disclosure of the key, and the
-    // operator needs to copy it to configure a client. Every other path that
-    // echoes a credential is an accident and stays redacted.
-    process.stdout.write(`\n  Your unified API key: ${key}\n\n`);
+    // A direct stdout write bypasses the process-wide console redaction, so it
+    // is only safe for a deliberate local-development session with an attached
+    // terminal. Production, CI, and container startup must never put this
+    // credential in a log stream; the dashboard is the safe retrieval path.
+    if (isInteractiveLocalDevelopment()) {
+      process.stdout.write(`\n  Your unified API key: ${key}\n\n`);
+    } else {
+      console.log(
+        '\n  A unified API key was generated. Open the dashboard and retrieve it from the Keys page.\n' +
+        '  The key is intentionally not printed to logs.\n',
+      );
+    }
   }
+}
+
+function isInteractiveLocalDevelopment(): boolean {
+  const nodeEnv = process.env.NODE_ENV?.trim().toLowerCase() || 'development';
+  return nodeEnv === 'development'
+    && process.stdout.isTTY === true
+    && !process.env.CI
+    && !process.env.KUBERNETES_SERVICE_HOST;
 }
 
 /**

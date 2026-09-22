@@ -14,10 +14,12 @@
     "test:bootstrap": "node --test scripts/dev-bootstrap.test.mjs",
     "test:hooks": "node --test .claude/hooks/contributing-check.test.mjs",
     "build": "npm run build -w server && npm run build -w cli && npm run build -w client",
+    "lint": "npm run lint -w server && npm run lint -w cli",
     "build:server": "npm run build -w server",
     "test:migrations": "npm run test:migrations -w server",
     "desktop:dev": "npm run build -w client && npm --prefix desktop run dev",
     "desktop:dist": "npm run build -w client && npm --prefix desktop run dist",
+    "desktop:dist:mac:x64": "npm run build -w client && npm --prefix desktop run dist:mac:x64",
     "desktop:dist:win": "npm run build -w client && npm --prefix desktop run dist:win",
     "desktop:dist:linux": "npm run build -w client && npm --prefix desktop run dist:linux",
     "db:migration:up": "npm run db:migration:up -w server",
@@ -33,5 +35,10 @@
   "engines": {
     "node": ">=20.18.0 <25.0.0",
     "npm": ">=10.0.0"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.10.0": true,
+    "esbuild@0.28.2": true,
+    "msw@2.14.6": true
   }
 }

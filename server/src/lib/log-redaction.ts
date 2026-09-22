@@ -21,6 +21,9 @@
 import { recordConsoleLine } from './server-logs.js';
 import type { ServerLogLevel } from './server-logs.js';
 
+/* eslint-disable no-useless-escape -- credential regexes deliberately keep
+   explicit `\-` escapes for readability; the redaction must not change. */
+
 const REDACTED = '[redacted-key]';
 
 // Ordered most-specific first: prefixed provider keys, then bearer tokens, then
@@ -38,6 +41,7 @@ const PATTERNS: Array<[RegExp, string]> = [
   [/\bghp_[A-Za-z0-9]{20,}/g, REDACTED],               // GitHub classic
   [/\bhf_[A-Za-z0-9]{16,}/g, REDACTED],                // HuggingFace
   [/\bcfut_[A-Za-z0-9]{16,}/g, REDACTED],              // Cloudflare
+  [/\brc-[0-9a-f]{48}\b/gi, REDACTED],                 // AMD Radeon Cloud
   [/\bvck_[A-Za-z0-9]{16,}/g, REDACTED],               // Vercel
   [/\bcpk_[A-Za-z0-9.]{16,}/g, REDACTED],              // Chutes
   [/\balv2_[A-Za-z0-9]{16,}/g, REDACTED],              // Aion Labs

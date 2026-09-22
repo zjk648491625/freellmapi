@@ -23,7 +23,8 @@ import {
   getCompressionConfig,
   setCompressionConfig,
 } from '../services/compression/config.js';
-import { getHeadroomThresholds, setHeadroomThresholds } from '../services/router.js';
+import { getHeadroomThresholds, setHeadroomThresholds, getTaskWeightShare, setTaskWeightShare } from '../services/router.js';
+import { MCP_ENABLED_SETTING, isMcpServerEnabled } from './mcp.js';
 import { z } from 'zod';
 import { getAppVersion } from '../lib/app-version.js';
 import {
@@ -129,6 +130,27 @@ settingsRouter.put('/fusion', (req: Request, res: Response) => {
   }
   const saved = setSavedFusionConfig(parsed.data);
   res.json({ config: saved, maxK: getFusionMaxK() });
+});
+
+// ── MCP server lifecycle (#925, MVP-1) ──────────────────────────────────────
+// Config surface for the /mcp introspection server. The Keys page renders this
+// as a switch under Agent compatibility; the stored default is seeded once by
+// migration so upgrades keep serving the clients they already had.
+
+settingsRouter.get('/enable-mcp', (_req: Request, res: Response) => {
+  res.json({ enabled: isMcpServerEnabled() });
+});
+
+const enableMcpSchema = z.object({ enabled: z.boolean() });
+
+settingsRouter.put('/enable-mcp', (req: Request, res: Response) => {
+  const parsed = enableMcpSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: { message: 'Invalid MCP setting: enabled must be a boolean.', type: 'invalid_request_error' } });
+    return;
+  }
+  setSetting(MCP_ENABLED_SETTING, parsed.data.enabled ? '1' : '0');
+  res.json({ enabled: parsed.data.enabled });
 });
 
 // Get the Claude Code model map (opus/sonnet/haiku/default → 'auto' | model_id).
@@ -313,6 +335,33 @@ settingsRouter.put('/headroom', (req: Request, res: Response) => {
     res.json({ rampStart: rampStart ?? null, floor: floor ?? null });
   } catch (err: any) {
     res.status(400).json({ error: { message: `Invalid headroom thresholds: ${err.message}`, type: 'invalid_request_error' } });
+  }
+});
+
+// Task-type weight share (#1127 follow-up): the fraction of one bandit axis
+// moved onto the other when a request declares/derives a task type (code →
+// intelligence; chat → speed). 0 = bias disabled. null = scoring.ts default.
+settingsRouter.get('/task-weight-share', (_req: Request, res: Response) => {
+  res.json({ share: getTaskWeightShare() });
+});
+
+const taskWeightSharePutSchema = z.object({
+  share: z.number().min(0).max(1).nullable().optional(),
+});
+
+// Update the task-type weight share. null clears back to the default. Takes
+// effect on the next request — no restart needed.
+settingsRouter.put('/task-weight-share', (req: Request, res: Response) => {
+  const parsed = taskWeightSharePutSchema.safeParse(req.body);
+  if (!parsed.success || parsed.data.share === undefined) {
+    res.status(400).json({ error: { message: 'Invalid task-weight-share: send {"share": 0..1 | null}', type: 'invalid_request_error' } });
+    return;
+  }
+  try {
+    setTaskWeightShare(parsed.data.share);
+    res.json({ share: getTaskWeightShare() });
+  } catch (err: any) {
+    res.status(400).json({ error: { message: `Invalid task-weight-share: ${err.message}`, type: 'invalid_request_error' } });
   }
 });
 
